@@ -1,36 +1,107 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
     <title>Dogfight Hell</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <script src="pixi.js"></script>
 </head>
-<body style="background-color: #f0f0f0; margin: 0; padding: 0; overflow: hidden;">
+<body style="background-color: #251c3e; margin: 0; padding: 0; overflow: hidden;">
     <!-- SPIRIT OF SCRAPPINESS -->
     <script type="module">
+        // Intro
+        const intro = [
+            "┌─────────────────────────────────────────────┐",
+            "│ Dogfight Hell v0.0.1                 SN-001 │",
+            "│                                             │",
+            "│ by Studio Jin                               │",
+            "│                                             │",
+            "│ https://github.com/studio-jin/dogfight-hell │",
+            "└─────────────────────────────────────────────┘"
+        ];
+
         // Initialize the game
         const app = new PIXI.Application();
-        console.log("🍔 Dogfight Hell - Flight of Death");
-        console.log("- by Studio Jin")
         await app.init({ 
             width: window.innerWidth,
             height: window.innerHeight,
             resizeTo: window,
-            backgroundColor: 0xf0f0f0
+            // backgroundColor: 0xf0f0f0
+            backgroundColor: 0x251c3e
         });
-        await PIXI.Assets.load('fighter.png');
-        const fighter = PIXI.Sprite.from('fighter.png');
-        app.stage.addChild(fighter);
-        document.body.appendChild(app.canvas);
+        console.log(intro.join('\n'));
+
+        // Load Assets
+        await PIXI.Assets.load(
+            'fighter.png'
+        );
+
+        // World
+        const world = { width: 600, height: 400 };
+
+        // Camera
+        let zoom = 1;
+        const viewport = { width: window.innerWidth, height: window.innerHeight };
+        const setupDebugBound = () => {
+            let debugBound = new PIXI.Graphics()
+                .rect(0, 0, world.width, world.height)
+                .stroke({ width: 1, color: 'white' });
+            app.stage.addChild(debugBound);
+            app.stage.position.set(100.0, 100.0);
+        }
+        const debugBound = setupDebugBound()
         
-        // Game Loop
+        // Resize Handler
+        const onResize = () => {
+            viewport.width = window.innerWidth;
+            viewport.height = window.innerHeight;
+            // Center the world
+            app.stage.position.set(
+                Math.floor((viewport.width - world.width * zoom) / 2),
+                Math.floor((viewport.height - world.height * zoom) / 2)
+            );
+            app.stage.scale.set(zoom);
+        }
+        window.addEventListener('resize', onResize);
+        onResize();
+
+        // Fighter
+        const createFighter = () => {
+            const fighter = PIXI.Sprite.from('fighter.png');
+            fighter.anchor.set(0.5);
+            fighter.scale.set(2);
+            fighter.position.set(world.width / 2, world.height / 2);
+            // nearest neighbor scaling
+            fighter.texture.source.scaleMode = 'nearest';
+            app.stage.addChild(fighter);
+            return fighter;
+        }
+
+        // Start The Game
+        const fighter = createFighter();
+        document.body.appendChild(app.canvas);
         let elapsed = 0.0;
-        app.ticker.add((ticker) => {
+        
+        // Update Time
+        const updateElapsedTime = (ticker) => {
             elapsed += ticker.deltaTime;
-            fighter.x = 100.0 + Math.cos(elapsed/50.0) * 100.0;
-        })
+        }
+
+        // Update Fighter
+        const updateFighter = (ticker) => {
+            // fighter.x = 100.0 + Math.cos(elapsed/50.0) * 100.0;
+            
+        }
+
+        // Game Loop
+        const gameLoop = (ticker) => {
+            updateElapsedTime(ticker);
+            updateFighter(ticker);
+        }
+        
+        app.ticker.add(gameLoop)
     </script>
 </body>
 </html>
