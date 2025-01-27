@@ -1,1 +1,36 @@
-Hello World
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dogfight Hell</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="pixi.js"></script>
+</head>
+<body style="background-color: #f0f0f0; margin: 0; padding: 0; overflow: hidden;">
+    <!-- SPIRIT OF SCRAPPINESS -->
+    <script type="module">
+        // Initialize the game
+        const app = new PIXI.Application();
+        console.log("🍔 Dogfight Hell - Flight of Death");
+        console.log("- by Studio Jin")
+        await app.init({ 
+            width: window.innerWidth,
+            height: window.innerHeight,
+            resizeTo: window,
+            backgroundColor: 0xf0f0f0
+        });
+        await PIXI.Assets.load('fighter.png');
+        const fighter = PIXI.Sprite.from('fighter.png');
+        app.stage.addChild(fighter);
+        document.body.appendChild(app.canvas);
+        
+        // Game Loop
+        let elapsed = 0.0;
+        app.ticker.add((ticker) => {
+            elapsed += ticker.deltaTime;
+            fighter.x = 100.0 + Math.cos(elapsed/50.0) * 100.0;
+        })
+    </script>
+</body>
+</html>
