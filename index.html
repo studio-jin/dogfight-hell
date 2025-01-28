@@ -201,7 +201,8 @@
 
         // Bullets
         const bulletSpeed = 8;
-        const maxBulletCounts = 100;
+        const recoilAmount = 10;
+        const maxBulletCounts = 1000;
         const bullets = Array(maxBulletCounts).fill(null);
         let bulletIndex = 0;
         const createBullet = (i) => {
@@ -257,7 +258,7 @@
             // Shoot
             if (controls.shoot.downAt > controls.shoot.upAt) {
                 if (shootCooldown <= 0) {
-                    shootCooldown = 7;
+                    shootCooldown = recoilAmount;
                     shoot(fighter.x, fighter.y, angle);
                 }
                 shootCooldown -= ticker.deltaTime;
@@ -288,6 +289,10 @@
             applyDrag(fighterVelocity);
             fighter.x += fighterVelocity.x;
             fighter.y += fighterVelocity.y;
+
+            // Clamp the fighter
+            fighter.x = Math.max(fighter.width / 2, Math.min(world.width - fighter.width / 2, fighter.x));
+            fighter.y = Math.max(fighter.height / 2, Math.min(world.height - fighter.height / 2, fighter.y));
         }
 
         // Game Loop
