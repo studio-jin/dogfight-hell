@@ -37,6 +37,7 @@
         await PIXI.Assets.load([
             'fighter.png',
             'crosshair.png',
+            'bullet.png',
         ]);
 
         // World
@@ -120,13 +121,25 @@
             if (document.pointerLockElement === document.body) {
                 pointer.x += event.movementX;
                 pointer.y += event.movementY;
+                // Clamp the pointer
+                pointer.x = Math.max(0, Math.min(viewport.width, pointer.x));
+                pointer.y = Math.max(0, Math.min(viewport.height, pointer.y));
             } else {
                 pointer.x = event.clientX;
                 pointer.y = event.clientY;
             }
         }
         document.addEventListener('mousemove', onMouseMove);
-
+        
+        // Pointer Lock
+        document.body.requestPointerLock = 
+            document.body.requestPointerLock || 
+            document.body.mozRequestPointerLock || 
+            document.body.webkitRequestPointerLock;
+        document.body.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
+        
         // Keyboard Input
         const controls = {
             up: {
@@ -148,6 +161,11 @@
                 keys: ['d', 'ArrowRight'],
                 downAt: 0,
                 upAt: 0
+            },
+            shoot: {
+                keys: [' '],
+                downAt: 0,
+                upAt: 0
             }
         };
         const onKeyDown = (event) => {
@@ -167,19 +185,58 @@
         document.addEventListener('keydown', onKeyDown);
         document.addEventListener('keyup', onKeyUp);
 
+        // Mouse Press to shoot
+        const onMouseDown = (event) => {
+            if (controls.shoot.downAt <= controls.shoot.upAt) {
+                controls.shoot.downAt = performance.now();
+            }
+        }
+        const onMouseUp = (event) => {
+            if (controls.shoot.downAt > controls.shoot.upAt) {
+                controls.shoot.upAt = performance.now();
+            }
+        }
+        document.addEventListener('mousedown', onMouseDown);
+        document.addEventListener('mouseup', onMouseUp);
 
-        // Pointer Capture
-        document.body.requestPointerLock = 
-            document.body.requestPointerLock || 
-            document.body.mozRequestPointerLock || 
-            document.body.webkitRequestPointerLock;
-        document.body.addEventListener('click', () => {
-            document.body.requestPointerLock();
-        });
-        
+        // Bullets
+        const bulletSpeed = 8;
+        const maxBulletCounts = 100;
+        const bullets = Array(maxBulletCounts).fill(null);
+        let bulletIndex = 0;
+        const createBullet = (i) => {
+            const bullet = PIXI.Sprite.from('bullet.png');
+            bullet.anchor.set(0.5);
+            bullet.scale.set(spriteScale);
+            bullet.position.set(-10000, -10000);
+            bullet.texture.source.scaleMode = 'nearest';
+            bullet.velocity = { x: 0, y: 0 };
+            app.stage.addChild(bullet);
+            return bullet;
+        }
+        for (let i = 0; i < maxBulletCounts; i++) {
+            bullets[i] = createBullet();
+        }
+        const shoot = (x, y, angle) => {
+            const bullet = bullets[bulletIndex];
+            bullet.x = x;
+            bullet.y = y;
+            // bullet.rotation = angle;
+            bullet.velocity.x = Math.cos(angle) * 8;
+            bullet.velocity.y = Math.sin(angle) * 8;
+            bulletIndex = (bulletIndex + 1) % maxBulletCounts;
+        }
+        const updateBullets = (ticker) => {
+            for (const bullet of bullets) {
+                bullet.x += bullet.velocity.x;
+                bullet.y += bullet.velocity.y;
+            }
+        }
+
         // Update Fighter
         const fighterVelocity = { x: 0, y: 0 };
         const efficacy = 4;
+        let shootCooldown = 0; 
         const applyDrag = (velocity) => {
             const drag = 0.40;
             const magnitude = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
@@ -193,8 +250,19 @@
             const dx = crosshair.x - fighter.x;
             const dy = crosshair.y - fighter.y;
             const angle = Math.atan2(dy, dx);
-            fighter.rotation = angle + Math.PI / 2;
+            const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            fighter.rotation = snappedAngle + Math.PI / 2;
+
             
+            // Shoot
+            if (controls.shoot.downAt > controls.shoot.upAt) {
+                if (shootCooldown <= 0) {
+                    shootCooldown = 7;
+                    shoot(fighter.x, fighter.y, angle);
+                }
+                shootCooldown -= ticker.deltaTime;
+            }
+
             // Move the fighter
             let throttle = { x: 0, y: 0 };
             if (controls.up.downAt > controls.up.upAt) {
@@ -227,6 +295,7 @@
             updateElapsedTime(ticker);
             updateCrosshair(ticker);
             updateFighter(ticker);
+            updateBullets(ticker);
         }
         
         app.ticker.add(gameLoop)
