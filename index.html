@@ -34,15 +34,23 @@
         console.log(intro.join('\n'));
 
         // Load Assets
-        await PIXI.Assets.load(
-            'fighter.png'
-        );
+        await PIXI.Assets.load([
+            'fighter.png',
+            'crosshair.png',
+        ]);
 
         // World
         const world = { width: 600, height: 400 };
 
-        // Camera
+        // Zoom
         let zoom = 1;
+
+        // Sprite Scale
+        PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
+        const spriteScale = 3;
+
+
+        // Camera
         const viewport = { width: window.innerWidth, height: window.innerHeight };
         const setupDebugBound = () => {
             let debugBound = new PIXI.Graphics()
@@ -67,13 +75,24 @@
         window.addEventListener('resize', onResize);
         onResize();
 
+        // Crosshair
+        const createCrosshair = () => {
+            const crosshair = PIXI.Sprite.from('crosshair.png');
+            crosshair.anchor.set(0.5);
+            crosshair.scale.set(spriteScale);
+            crosshair.position.set(world.width / 2, world.height / 2);
+            crosshair.texture.source.scaleMode = 'nearest';
+            app.stage.addChild(crosshair);
+            return crosshair;
+        }
+        const crosshair = createCrosshair();
+
         // Fighter
         const createFighter = () => {
             const fighter = PIXI.Sprite.from('fighter.png');
             fighter.anchor.set(0.5);
-            fighter.scale.set(2);
+            fighter.scale.set(spriteScale);
             fighter.position.set(world.width / 2, world.height / 2);
-            // nearest neighbor scaling
             fighter.texture.source.scaleMode = 'nearest';
             app.stage.addChild(fighter);
             return fighter;
@@ -89,15 +108,124 @@
             elapsed += ticker.deltaTime;
         }
 
+        // Update Crosshair
+        const updateCrosshair = (ticker) => {
+            crosshair.x = Math.round((pointer.x - app.stage.x) / zoom);
+            crosshair.y = Math.round((pointer.y - app.stage.y) / zoom);
+        }
+        
+        // Mouse Input
+        let pointer = { x: 0, y: 0 };
+        const onMouseMove = (event) => {
+            if (document.pointerLockElement === document.body) {
+                pointer.x += event.movementX;
+                pointer.y += event.movementY;
+            } else {
+                pointer.x = event.clientX;
+                pointer.y = event.clientY;
+            }
+        }
+        document.addEventListener('mousemove', onMouseMove);
+
+        // Keyboard Input
+        const controls = {
+            up: {
+                keys: ['w', 'ArrowUp'],
+                downAt: 0,
+                upAt: 0
+            },
+            down: {
+                keys: ['s', 'ArrowDown'],
+                downAt: 0,
+                upAt: 0
+            },
+            left: {
+                keys: ['a', 'ArrowLeft'],
+                downAt: 0,
+                upAt: 0
+            },
+            right: {
+                keys: ['d', 'ArrowRight'],
+                downAt: 0,
+                upAt: 0
+            }
+        };
+        const onKeyDown = (event) => {
+            for (const control of Object.values(controls)) {
+                if (control.keys.includes(event.key) && control.downAt <= control.upAt) {
+                    control.downAt = performance.now();
+                }
+            }
+        }
+        const onKeyUp = (event) => {
+            for (const control of Object.values(controls)) {
+                if (control.keys.includes(event.key) && control.downAt > control.upAt) {
+                    control.upAt = performance.now();
+                }
+            }
+        }
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+
+
+        // Pointer Capture
+        document.body.requestPointerLock = 
+            document.body.requestPointerLock || 
+            document.body.mozRequestPointerLock || 
+            document.body.webkitRequestPointerLock;
+        document.body.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
+        
         // Update Fighter
+        const fighterVelocity = { x: 0, y: 0 };
+        const efficacy = 4;
+        const applyDrag = (velocity) => {
+            const drag = 0.40;
+            const magnitude = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+            if (magnitude > 0) {
+                velocity.x -= velocity.x * drag;
+                velocity.y -= velocity.y * drag;
+            }
+        }
         const updateFighter = (ticker) => {
-            // fighter.x = 100.0 + Math.cos(elapsed/50.0) * 100.0;
+            // Align the fighter to the crosshair
+            const dx = crosshair.x - fighter.x;
+            const dy = crosshair.y - fighter.y;
+            const angle = Math.atan2(dy, dx);
+            fighter.rotation = angle + Math.PI / 2;
             
+            // Move the fighter
+            let throttle = { x: 0, y: 0 };
+            if (controls.up.downAt > controls.up.upAt) {
+                throttle.y -= 1;
+            }
+            if (controls.down.downAt > controls.down.upAt) {
+                throttle.y += 1;
+            }
+            if (controls.left.downAt > controls.left.upAt) {
+                throttle.x -= 1;
+            }
+            if (controls.right.downAt > controls.right.upAt) {
+                throttle.x += 1;
+            }
+            // Normalize the throttle
+            const magnitude = Math.sqrt(throttle.x * throttle.x + throttle.y * throttle.y);
+            if (magnitude > 0) {
+                throttle.x /= magnitude;
+                throttle.y /= magnitude;
+            }
+            fighterVelocity.x += throttle.x * efficacy;
+            fighterVelocity.y += throttle.y * efficacy;
+            applyDrag(fighterVelocity);
+            fighter.x += fighterVelocity.x;
+            fighter.y += fighterVelocity.y;
         }
 
         // Game Loop
         const gameLoop = (ticker) => {
             updateElapsedTime(ticker);
+            updateCrosshair(ticker);
             updateFighter(ticker);
         }
         
