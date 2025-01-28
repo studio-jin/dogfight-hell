@@ -229,8 +229,8 @@
         }
         const updateBullets = (ticker) => {
             for (const bullet of bullets) {
-                bullet.x += bullet.velocity.x;
-                bullet.y += bullet.velocity.y;
+                bullet.x += bullet.velocity.x * ticker.deltaTime;
+                bullet.y += bullet.velocity.y * ticker.deltaTime;
             }
         }
 
@@ -287,8 +287,8 @@
             fighterVelocity.x += throttle.x * efficacy;
             fighterVelocity.y += throttle.y * efficacy;
             applyDrag(fighterVelocity);
-            fighter.x += fighterVelocity.x;
-            fighter.y += fighterVelocity.y;
+            fighter.x += fighterVelocity.x * ticker.deltaTime;
+            fighter.y += fighterVelocity.y * ticker.deltaTime;
 
             // Clamp the fighter
             fighter.x = Math.max(fighter.width / 2, Math.min(world.width - fighter.width / 2, fighter.x));
