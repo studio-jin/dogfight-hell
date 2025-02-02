@@ -7,6 +7,7 @@
     <title>Dogfight Hell</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <script src="pixi.js"></script>
+    <script src="tfjs.js"></script>
 </head>
 <body style="background-color: #251c3e; margin: 0; padding: 0; overflow: hidden;">
     <!-- SPIRIT OF SCRAPPINESS -->
@@ -48,9 +49,8 @@
         let zoom = 1;
 
         // Sprite Scale
-        PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
+        PIXI.SCALE_MODES.DEFAULT = "nearest";
         const spriteScale = 3;
-
 
         // Camera
         const viewport = { width: window.innerWidth, height: window.innerHeight };
@@ -205,9 +205,10 @@
         
         // Enemies
         const enemies = [];
-        const enemyCount = 2;
-        const createEnemy = (x, y) => {
+        const enemyCount = 1;
+        const createEnemy = (enemyIndex, x, y) => {
             const enemy = PIXI.Sprite.from('enemy.png');
+            enemy.enemyIndex = enemyIndex;
             enemy.anchor.set(0.5);
             enemy.scale.set(spriteScale);
             enemy.position.set(x, y);
@@ -218,15 +219,16 @@
             app.stage.addChild(enemy);
             return enemy;
         }
-        for (let i = 0; i < enemyCount; i++) {
+        for (let enemyIndex = 0; enemyIndex < enemyCount; enemyIndex++) {
             enemies.push(createEnemy(
+                enemyIndex,
                 Math.random() * world.width,
-                Math.random() * world.height
+                Math.random() * world.height,
             ));
         }
         const enemySpeed = 1;
         const enemyRange = 300;
-        const enemyRecoilAmount = 10;
+        const enemyRecoilAmount = 40;
         const updateEnemies = (ticker) => {
             for (const enemy of enemies) {
                 if (enemy.state === 'INACTIVE') continue;
@@ -258,7 +260,7 @@
         }
 
         // Bullets
-        const bulletSpeed = 8;
+        const bulletSpeed = 6;
         const recoilAmount = 10;
         const maxBulletCounts = 1000;
         const bullets = Array(maxBulletCounts).fill(null);
@@ -283,8 +285,8 @@
             bullet.isPlayerBullet = isPlayerBullet;
             bullet.x = x;
             bullet.y = y;
-            bullet.velocity.x = Math.cos(angle) * 8;
-            bullet.velocity.y = Math.sin(angle) * 8;
+            bullet.velocity.x = Math.cos(angle) * bulletSpeed;
+            bullet.velocity.y = Math.sin(angle) * bulletSpeed;
             updateBulletState(bullet, 'ACTIVE');
             bulletIndex = (bulletIndex + 1) % maxBulletCounts;
         }
@@ -337,6 +339,7 @@
             fighter.state = state;
             if (state === 'INACTIVE') {
                 fighter.visible = false;
+                gameover();
             } else {
                 fighter.visible = true;
             }
@@ -349,7 +352,6 @@
             } else if (target.isFighter) {
                 updateFighterState(target, 'INACTIVE');
             }
-            
         }
         const updateBullets = (ticker) => {
             for (const bullet of bullets) {
@@ -388,7 +390,7 @@
 
                     }
                 } else {
-                    const adjustment = 10;
+                    const adjustment = 15;
                     if (rayIntersectsAABB(
                         bullet.x, bullet.y, 
                         bullet.velocity.x * ticker.deltaTime, bullet.velocity.y * ticker.deltaTime,
@@ -410,6 +412,52 @@
             }
         }
 
+        // Data Collection
+        const getGameStateFor = (subject) => {
+            const closest = bullets.reduce((closest, bullet) => {
+                if (bullet.state === 'INACTIVE') return closest;
+                if (subject.isFighter && bullet.isPlayerBullet) return closest;
+                if (subject.isEnemy && !bullet.isPlayerBullet) return closest;
+                const dx = bullet.x - subject.x;
+                const dy = bullet.y - subject.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < closest.distance) {
+                    return { bullet, distance };
+                }
+                return closest;
+            }, { bullet: null, distance: Infinity });
+            // if (closest.bullet !== null) {
+            //     debugger
+            // }
+            return [
+                closest.distance,
+                closest.bullet?.x ?? 0, 
+                closest.bullet?.y ?? 0,
+                closest.bullet?.velocity.x ?? 0, 
+                closest.bullet?.velocity.y ?? 0,
+                subject.x, 
+                subject.y,
+            ];
+        };
+        const collectedData = [];
+        const gameover = () => {
+            console.log("Game Over!");
+            // throw away last 10 frames of data
+            const goodData = collectedData.slice(0, -60);
+            // Download data
+            const data = new Blob([JSON.stringify(goodData)], { type: 'application/json' });
+            const url = URL.createObjectURL(data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `training_data_${Date.now()}.json`; // Name of the file
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 0);
+        }
+
         // Update Fighter
         const fighterVelocity = { x: 0, y: 0 };
         const efficacy = 4;
@@ -424,6 +472,10 @@
         }
         const updateFighter = (ticker) => {
             if (fighter.state === 'INACTIVE') return;
+
+            const gameState = getGameStateFor(fighter);
+            const [bulletDistance] = gameState;
+            
             // Align the fighter to the crosshair
             const dx = crosshair.x - fighter.x;
             const dy = crosshair.y - fighter.y;
@@ -431,7 +483,6 @@
             const snappedAngle = Math.round(angle / (Math.PI / 8)) * (Math.PI / 8);
             fighter.rotation = snappedAngle + Math.PI / 2;
 
-            
             // Shoot
             if (controls.shoot.downAt > controls.shoot.upAt) {
                 if (shootCooldown <= 0) {
@@ -455,6 +506,7 @@
             if (controls.right.downAt > controls.right.upAt) {
                 throttle.x += 1;
             }
+            const gameAction = [throttle.x, throttle.y];
             // Normalize the throttle
             const magnitude = Math.sqrt(throttle.x * throttle.x + throttle.y * throttle.y);
             if (magnitude > 0) {
@@ -470,6 +522,11 @@
             // Clamp the fighter
             fighter.x = Math.max(fighter.width / 2, Math.min(world.width - fighter.width / 2, fighter.x));
             fighter.y = Math.max(fighter.height / 2, Math.min(world.height - fighter.height / 2, fighter.y));
+
+            // Collect data
+            if (bulletDistance < 300) {
+                collectedData.push({ gameState, gameAction });
+            }
         }
 
         // Game Loop
@@ -480,8 +537,37 @@
             updateBullets(ticker);
             updateEnemies(ticker);
         }
-        
         app.ticker.add(gameLoop)
+
+        
+        
+        // createModel = () => {
+        //     // Input: Bullet X, Bullet Y, BulletVX, BulletVY
+        //     // Output: Up, Down, Left, Right
+        //     const model = tf.sequential();
+        //     model.add(tf.layers.dense({ units: 16, inputShape: [5], activation: 'relu' }));
+        //     model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
+        //     model.add(tf.layers.dense({ units: 4, activation: 'softmax' }));
+        //     model.compile({
+        //         optimizer: tf.train.adam(),
+        //         loss: 'categoricalCrossentropy',
+        //         metrics: ['accuracy']
+        //     });
+        //     return model;
+        // }
+        // const model = createModel();
+        // async function trainModel() {
+        //     await model.fit(trainingData, labels, {
+        //         epochs: 50,
+        //         batchSize: 8,
+        //         shuffle: true,
+        //         callbacks: {
+        //             onEpochEnd: (epoch, logs) => console.log(`Epoch ${epoch + 1}: Loss = ${logs.loss}`)
+        //         }
+        //     });
+        //     console.log("Training complete!");
+        // }
+
     </script>
 </body>
 </html>
