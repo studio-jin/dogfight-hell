@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
 import torch.optim as optim
 
-# ✅ Detect Metal GPU (MPS)
+# ✅ Detect Metal GPU (MPS) or fallback to CPU
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
 print(f"Using device: {device}")
 
@@ -23,6 +23,13 @@ class GameDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.data[idx]
+        # closest.distance,
+        # closest.bullet?.x ?? 0, 
+        # closest.bullet?.y ?? 0,
+        # closest.bullet?.velocity.x ?? 0, 
+        # closest.bullet?.velocity.y ?? 0,
+        # subject.x, 
+        # subject.y,
         game_state = torch.tensor(sample['gameState'], dtype=torch.float32)
         game_action = torch.tensor(sample['gameAction'], dtype=torch.float32)
         return game_state, game_action
@@ -122,5 +129,29 @@ if __name__ == "__main__":
     val_folder = 'data/validation'
     
     model = train_model(train_folder, val_folder)
+    # Save final model (same as best in this script, but it’s good practice)
     torch.save(model.state_dict(), 'final_model.pth')
     print("Training complete. Best model saved to best_model.pth, final model saved to final_model.pth.")
+
+    # 🔥 EXPORT TO ONNX
+    # 1. Move model to CPU for export (onnx.js typically runs inference on CPU in the browser)
+    model.to('cpu')
+    model.eval()
+
+    # 2. Create a dummy input matching your model’s input shape (batch_size=1, feature_size=7)
+    dummy_input = torch.randn(1, 7)
+
+    # 3. Export to ONNX format
+    onnx_file = "model.onnx"
+    torch.onnx.export(
+        model, 
+        dummy_input, 
+        onnx_file,
+        export_params=True,        # Store the trained parameter weights
+        opset_version=11,          # ONNX opset version
+        do_constant_folding=True,  # Simplify model expression
+        input_names=['game_state'],    # Give helpful names to your inputs
+        output_names=['game_action']   # And to your outputs
+    )
+
+    print(f"ONNX model exported to {onnx_file}. You can now load this in onnx.js.")

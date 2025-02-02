@@ -7,7 +7,9 @@
     <title>Dogfight Hell</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <script src="pixi.js"></script>
-    <script src="tfjs.js"></script>
+    <!-- <script src="tfjs.js"></script> -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/onnxruntime-web.min.js"></script> -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 </head>
 <body style="background-color: #251c3e; margin: 0; padding: 0; overflow: hidden;">
     <!-- SPIRIT OF SCRAPPINESS -->
@@ -233,28 +235,43 @@
             for (const enemy of enemies) {
                 if (enemy.state === 'INACTIVE') continue;
                 if (fighter.state === 'INACTIVE') continue;
-                // Move the enemy
-                const dx = fighter.x - enemy.x;
-                const dy = fighter.y - enemy.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const angle = Math.atan2(dy, dx);
-                const snappedAngle = Math.round(angle / (Math.PI / 8)) * (Math.PI / 8);
-                enemy.rotation = snappedAngle + Math.PI / 2;
-                
-                if (distance > enemyRange) {
-                    enemy.x += Math.cos(angle) * enemySpeed * ticker.deltaTime;
-                    enemy.y += Math.sin(angle) * enemySpeed * ticker.deltaTime;
-                } else if (distance < enemyRange * 3 / 4) {
-                    enemy.x -= Math.cos(angle) * enemySpeed * ticker.deltaTime;
-                    enemy.y -= Math.sin(angle) * enemySpeed * ticker.deltaTime;
-                } else {
-                    // Shoot
-                    if (enemy.shootCooldown <= 0) {
-                        enemy.shootCooldown = enemyRecoilAmount;
-                        shoot(enemy.x, enemy.y, angle, false);
+                if (enemy.isThinking) continue;
+                const enemyGameState = getGameStateFor(enemy);
+                enemy.isThinking = true;
+                getEnemyActionFromModel(enemyGameState).then((action) => {
+                    // console.log(action);
+                    let [dx, dy] = action;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > 1) {
+                        dx /= distance;
+                        dy /= distance;
                     }
-                    enemy.shootCooldown -= ticker.deltaTime;
-                }
+                    enemy.x += dx * enemySpeed * ticker.deltaTime;
+                    enemy.y += dy * enemySpeed * ticker.deltaTime;
+                    enemy.isThinking = false;
+                });
+
+                // // Move the enemy
+                // const dx = fighter.x - enemy.x;
+                // const dy = fighter.y - enemy.y;
+                // const distance = Math.sqrt(dx * dx + dy * dy);
+                // const angle = Math.atan2(dy, dx);
+                // const snappedAngle = Math.round(angle / (Math.PI / 8)) * (Math.PI / 8);
+                // enemy.rotation = snappedAngle + Math.PI / 2;
+                // if (distance > enemyRange) {
+                //     enemy.x += Math.cos(angle) * enemySpeed * ticker.deltaTime;
+                //     enemy.y += Math.sin(angle) * enemySpeed * ticker.deltaTime;
+                // } else if (distance < enemyRange * 3 / 4) {
+                //     enemy.x -= Math.cos(angle) * enemySpeed * ticker.deltaTime;
+                //     enemy.y -= Math.sin(angle) * enemySpeed * ticker.deltaTime;
+                // } else {
+                //     // Shoot
+                //     if (enemy.shootCooldown <= 0) {
+                //         enemy.shootCooldown = enemyRecoilAmount;
+                //         shoot(enemy.x, enemy.y, angle, false);
+                //     }
+                //     enemy.shootCooldown -= ticker.deltaTime;
+                // }
 
             }
         }
@@ -430,7 +447,7 @@
             //     debugger
             // }
             return [
-                closest.distance,
+                closest.distance > 10000 ? 10000 : closest.distance,
                 closest.bullet?.x ?? 0, 
                 closest.bullet?.y ?? 0,
                 closest.bullet?.velocity.x ?? 0, 
@@ -528,6 +545,31 @@
                 collectedData.push({ gameState, gameAction });
             }
         }
+
+        // ONNX
+        let ortSession = null;
+        async function getEnemyActionFromModel(gameStateArray) {
+            if (!ortSession) return [0,0]; // fallback if model not loaded
+
+            // (1) Create the input tensor. Must match the model’s input name and shape
+            const inputTensor = new ort.Tensor('float32', Float32Array.from(gameStateArray), [1, 7]);
+
+            // (2) Run inference
+            const feeds = { game_state: inputTensor };
+            const results = await ortSession.run(feeds);
+
+            // (3) Grab result. Suppose your model output is named "game_action"
+            // debugger;
+            const outputData = results.game_action.data; // Float32Array of length 2
+
+            return [ outputData[0], outputData[1] ]; // or transform as needed
+        }
+        async function loadOnnxModel() {
+            // "model.onnx" should be served or placed relative to this HTML file
+            ortSession = await ort.InferenceSession.create('model.onnx');
+            console.log("ONNX model loaded!");
+        }
+        await loadOnnxModel(); // Load the model
 
         // Game Loop
         const gameLoop = (ticker) => {
