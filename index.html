@@ -37,6 +37,7 @@
         await PIXI.Assets.load([
             'fighter.png',
             'crosshair.png',
+            'enemy.png',
             'bullet.png',
         ]);
 
@@ -59,6 +60,7 @@
                 .stroke({ width: 1, color: 'white' });
             app.stage.addChild(debugBound);
             app.stage.position.set(100.0, 100.0);
+            return debugBound;
         }
         const debugBound = setupDebugBound()
         
@@ -163,7 +165,7 @@
                 upAt: 0
             },
             shoot: {
-                keys: [' '],
+                keys: [],
                 downAt: 0,
                 upAt: 0
             }
@@ -198,6 +200,25 @@
         }
         document.addEventListener('mousedown', onMouseDown);
         document.addEventListener('mouseup', onMouseUp);
+        
+        // Enemies
+        const enemies = [];
+        const createEnemy = (x, y) => {
+            const enemy = PIXI.Sprite.from('enemy.png');
+            enemy.anchor.set(0.5);
+            enemy.scale.set(spriteScale);
+            enemy.position.set(x, y);
+            enemy.texture.source.scaleMode = 'nearest';
+            enemy.state = 'ACTIVE';
+            app.stage.addChild(enemy);
+            return enemy;
+        }
+        for (let i = 0; i < 10; i++) {
+            enemies.push(createEnemy(
+                Math.random() * world.width,
+                Math.random() * world.height
+            ));
+        }
 
         // Bullets
         const bulletSpeed = 8;
@@ -212,6 +233,7 @@
             bullet.position.set(-10000, -10000);
             bullet.texture.source.scaleMode = 'nearest';
             bullet.velocity = { x: 0, y: 0 };
+            bullet.state = 'INACTIVE';
             app.stage.addChild(bullet);
             return bullet;
         }
@@ -222,15 +244,75 @@
             const bullet = bullets[bulletIndex];
             bullet.x = x;
             bullet.y = y;
-            // bullet.rotation = angle;
             bullet.velocity.x = Math.cos(angle) * 8;
             bullet.velocity.y = Math.sin(angle) * 8;
+            bullet.state = 'ACTIVE';
             bulletIndex = (bulletIndex + 1) % maxBulletCounts;
+        }
+        const rayIntersectsAABB = (ox, oy, dx, dy, minX, minY, maxX, maxY) => {
+            let tMin = 0; // Start of the ray segment
+            let tMax = 1; // Bullet moves exactly one frame length
+
+            if (dx !== 0) {
+                let t1 = (minX - ox) / dx;
+                let t2 = (maxX - ox) / dx;
+                if (t1 > t2) [t1, t2] = [t2, t1]; // Swap if necessary
+                tMin = Math.max(tMin, t1);
+                tMax = Math.min(tMax, t2);
+                if (tMin > tMax) return false;
+            } else if (ox < minX || ox > maxX) {
+                return false; // Parallel and outside the box
+            }
+
+            if (dy !== 0) {
+                let t1 = (minY - oy) / dy;
+                let t2 = (maxY - oy) / dy;
+                if (t1 > t2) [t1, t2] = [t2, t1]; // Swap if necessary
+                tMin = Math.max(tMin, t1);
+                tMax = Math.min(tMax, t2);
+                if (tMin > tMax) return false;
+            } else if (oy < minY || oy > maxY) {
+                return false; // Parallel and outside the box
+            }
+
+            return tMin < 1 && tMax > 0; // True if segment is inside bounds
+        };
+
+        const onCollision = (bullet, enemy) => {
+            bullet.state = 'INACTIVE';
+            enemy.state = 'INACTIVE';
         }
         const updateBullets = (ticker) => {
             for (const bullet of bullets) {
-                bullet.x += bullet.velocity.x * ticker.deltaTime;
-                bullet.y += bullet.velocity.y * ticker.deltaTime;
+                if (bullet.state === 'INACTIVE') continue;
+                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) {
+                    bullet.state = 'INACTIVE';
+                    continue;
+                }
+                const nextX = bullet.x + bullet.velocity.x * ticker.deltaTime;
+                const nextY = bullet.y + bullet.velocity.y * ticker.deltaTime;
+
+                // Check for enemy collision
+                let hit = false;
+                for (const enemy of enemies) {
+                    let adjustment = 10;
+                    if (rayIntersectsAABB(
+                        bullet.x, bullet.y, 
+                        bullet.velocity.x * ticker.deltaTime, bullet.velocity.y * ticker.deltaTime,
+                        enemy.x - enemy.width / 2 + adjustment, enemy.y - enemy.height / 2 + adjustment, // smaller foot print
+                        enemy.x + enemy.width / 2 - adjustment, enemy.y + enemy.height / 2 - adjustment  // smaller foot print
+                    )) {
+                        onCollision(bullet, enemy);
+                        hit = true;
+                        break; // Stop checking if we already hit something
+                    }
+                }
+
+                // Move bullet only if no collision occurred
+                if (!hit) {
+                    bullet.x = nextX;
+                    bullet.y = nextY;
+                }
             }
         }
 
