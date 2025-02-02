@@ -42,7 +42,7 @@
         ]);
 
         // World
-        const world = { width: 600, height: 400 };
+        const world = { width: 800, height: 600 };
 
         // Zoom
         let zoom = 1;
@@ -97,6 +97,8 @@
             fighter.scale.set(spriteScale);
             fighter.position.set(world.width / 2, world.height / 2);
             fighter.texture.source.scaleMode = 'nearest';
+            fighter.isFighter = true;
+            fighter.state = 'ACTIVE';
             app.stage.addChild(fighter);
             return fighter;
         }
@@ -203,6 +205,7 @@
         
         // Enemies
         const enemies = [];
+        const enemyCount = 2;
         const createEnemy = (x, y) => {
             const enemy = PIXI.Sprite.from('enemy.png');
             enemy.anchor.set(0.5);
@@ -210,14 +213,48 @@
             enemy.position.set(x, y);
             enemy.texture.source.scaleMode = 'nearest';
             enemy.state = 'ACTIVE';
+            enemy.shootCooldown = 0;
+            enemy.isEnemy = true;
             app.stage.addChild(enemy);
             return enemy;
         }
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < enemyCount; i++) {
             enemies.push(createEnemy(
                 Math.random() * world.width,
                 Math.random() * world.height
             ));
+        }
+        const enemySpeed = 1;
+        const enemyRange = 300;
+        const enemyRecoilAmount = 10;
+        const updateEnemies = (ticker) => {
+            for (const enemy of enemies) {
+                if (enemy.state === 'INACTIVE') continue;
+                if (fighter.state === 'INACTIVE') continue;
+                // Move the enemy
+                const dx = fighter.x - enemy.x;
+                const dy = fighter.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+                const snappedAngle = Math.round(angle / (Math.PI / 8)) * (Math.PI / 8);
+                enemy.rotation = snappedAngle + Math.PI / 2;
+                
+                if (distance > enemyRange) {
+                    enemy.x += Math.cos(angle) * enemySpeed * ticker.deltaTime;
+                    enemy.y += Math.sin(angle) * enemySpeed * ticker.deltaTime;
+                } else if (distance < enemyRange * 3 / 4) {
+                    enemy.x -= Math.cos(angle) * enemySpeed * ticker.deltaTime;
+                    enemy.y -= Math.sin(angle) * enemySpeed * ticker.deltaTime;
+                } else {
+                    // Shoot
+                    if (enemy.shootCooldown <= 0) {
+                        enemy.shootCooldown = enemyRecoilAmount;
+                        shoot(enemy.x, enemy.y, angle, false);
+                    }
+                    enemy.shootCooldown -= ticker.deltaTime;
+                }
+
+            }
         }
 
         // Bullets
@@ -240,13 +277,15 @@
         for (let i = 0; i < maxBulletCounts; i++) {
             bullets[i] = createBullet();
         }
-        const shoot = (x, y, angle) => {
+        const shoot = (x, y, angle, isPlayerBullet) => {
             const bullet = bullets[bulletIndex];
+            bullet.bulletIndex = bulletIndex;
+            bullet.isPlayerBullet = isPlayerBullet;
             bullet.x = x;
             bullet.y = y;
             bullet.velocity.x = Math.cos(angle) * 8;
             bullet.velocity.y = Math.sin(angle) * 8;
-            bullet.state = 'ACTIVE';
+            updateBulletState(bullet, 'ACTIVE');
             bulletIndex = (bulletIndex + 1) % maxBulletCounts;
         }
         const rayIntersectsAABB = (ox, oy, dx, dy, minX, minY, maxX, maxY) => {
@@ -277,16 +316,48 @@
 
             return tMin < 1 && tMax > 0; // True if segment is inside bounds
         };
+        const updateBulletState = (bullet, state) => {
+            bullet.state = state;
+            if (state === 'INACTIVE') {
+                bullet.visible = false;
+            } else {
+                bullet.visible = true;
+            }
+        }
+        const updateEnemyState = (enemy, state) => {
+            enemy.state = state;
+            if (state === 'INACTIVE') {
+                enemy.visible = false;
+            } else {
+                enemy.visible = true;
+            }
+        }
 
-        const onCollision = (bullet, enemy) => {
-            bullet.state = 'INACTIVE';
-            enemy.state = 'INACTIVE';
+        const updateFighterState = (fighter, state) => {
+            fighter.state = state;
+            if (state === 'INACTIVE') {
+                fighter.visible = false;
+            } else {
+                fighter.visible = true;
+            }
+        }
+
+        const onCollision = (bullet, target) => {
+            updateBulletState(bullet, 'INACTIVE');
+            if (target.isEnemy) {
+                updateEnemyState(target, 'INACTIVE');
+            } else if (target.isFighter) {
+                updateFighterState(target, 'INACTIVE');
+            }
+            
         }
         const updateBullets = (ticker) => {
             for (const bullet of bullets) {
-                if (bullet.state === 'INACTIVE') continue;
+                if (bullet.state === 'INACTIVE') {
+                    continue;
+                }
                 if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) {
-                    bullet.state = 'INACTIVE';
+                    updateBulletState(bullet, 'INACTIVE');
                     continue;
                 }
                 const nextX = bullet.x + bullet.velocity.x * ticker.deltaTime;
@@ -294,17 +365,40 @@
 
                 // Check for enemy collision
                 let hit = false;
-                for (const enemy of enemies) {
-                    let adjustment = 10;
+                if (bullet.isPlayerBullet) {
+                    for (const enemy of enemies) {
+                        if (enemy.state === 'INACTIVE') continue;
+                        const adjustment = 10;
+                        if (rayIntersectsAABB(
+                            bullet.x, bullet.y, 
+                            bullet.velocity.x * ticker.deltaTime, bullet.velocity.y * ticker.deltaTime,
+                            enemy.x - enemy.width / 2 + adjustment, enemy.y - enemy.height / 2 + adjustment, // smaller foot print
+                            enemy.x + enemy.width / 2 - adjustment, enemy.y + enemy.height / 2 - adjustment  // smaller foot print
+                        )) {
+                            onCollision(bullet, enemy);
+                            hit = true;
+                            break; // Stop checking if we already hit something
+                        }
+                        // Otherwise, if it is close enough and approaching, notify enemy to dodge using a simple model.
+                        const distance = Math.sqrt((enemy.x - bullet.x) * (enemy.x - bullet.x) + (enemy.y - bullet.y) * (enemy.y - bullet.y));
+                        if (distance < 100) {
+
+                        }
+                        
+
+                    }
+                } else {
+                    const adjustment = 10;
                     if (rayIntersectsAABB(
                         bullet.x, bullet.y, 
                         bullet.velocity.x * ticker.deltaTime, bullet.velocity.y * ticker.deltaTime,
-                        enemy.x - enemy.width / 2 + adjustment, enemy.y - enemy.height / 2 + adjustment, // smaller foot print
-                        enemy.x + enemy.width / 2 - adjustment, enemy.y + enemy.height / 2 - adjustment  // smaller foot print
+                        fighter.x - fighter.width / 2 + adjustment, fighter.y - fighter.height / 2 + adjustment,
+                        fighter.x + fighter.width / 2 - adjustment, fighter.y + fighter.height / 2 - adjustment
                     )) {
-                        onCollision(bullet, enemy);
+                        // Fighter hit
+                        onCollision(bullet, fighter);
                         hit = true;
-                        break; // Stop checking if we already hit something
+                        break;
                     }
                 }
 
@@ -329,11 +423,12 @@
             }
         }
         const updateFighter = (ticker) => {
+            if (fighter.state === 'INACTIVE') return;
             // Align the fighter to the crosshair
             const dx = crosshair.x - fighter.x;
             const dy = crosshair.y - fighter.y;
             const angle = Math.atan2(dy, dx);
-            const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            const snappedAngle = Math.round(angle / (Math.PI / 8)) * (Math.PI / 8);
             fighter.rotation = snappedAngle + Math.PI / 2;
 
             
@@ -341,7 +436,7 @@
             if (controls.shoot.downAt > controls.shoot.upAt) {
                 if (shootCooldown <= 0) {
                     shootCooldown = recoilAmount;
-                    shoot(fighter.x, fighter.y, angle);
+                    shoot(fighter.x, fighter.y, angle, true);
                 }
                 shootCooldown -= ticker.deltaTime;
             }
@@ -383,6 +478,7 @@
             updateCrosshair(ticker);
             updateFighter(ticker);
             updateBullets(ticker);
+            updateEnemies(ticker);
         }
         
         app.ticker.add(gameLoop)
