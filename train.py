@@ -38,14 +38,16 @@ class GameDataset(Dataset):
 class SimpleNN(nn.Module):
     def __init__(self):
         super(SimpleNN, self).__init__()
-        self.fc1 = nn.Linear(7, 64)   # Reduced from 128 to 64
-        self.fc2 = nn.Linear(64, 32)  # Reduced from 64 to 32
-        self.fc3 = nn.Linear(32, 2)
+        self.fc1 = nn.Linear(7, 128)   # Reduced from 128 to 64
+        self.fc2 = nn.Linear(128, 64)  # Reduced from 64 to 32
+        self.fc3 = nn.Linear(64, 32)
+        self.fc4 = nn.Linear(32, 2)
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+        x = torch.relu(self.fc3(x))
+        return self.fc4(x)
 
 # ✅ Training Function with Early Stopping & Weight Decay
 def train_model(
@@ -54,7 +56,7 @@ def train_model(
     epochs=100, 
     batch_size=32, 
     learning_rate=0.0005,  # Lower learning rate
-    patience=5,            # Early stopping patience
+    patience=12,            # Early stopping patience
     weight_decay=1e-4      # L2 regularization
 ):
     # Load training and validation datasets

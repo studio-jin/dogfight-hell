@@ -235,43 +235,47 @@
             for (const enemy of enemies) {
                 if (enemy.state === 'INACTIVE') continue;
                 if (fighter.state === 'INACTIVE') continue;
-                if (enemy.isThinking) continue;
-                const enemyGameState = getGameStateFor(enemy);
-                enemy.isThinking = true;
-                getEnemyActionFromModel(enemyGameState).then((action) => {
-                    // console.log(action);
-                    let [dx, dy] = action;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance > 1) {
-                        dx /= distance;
-                        dy /= distance;
-                    }
-                    enemy.x += dx * enemySpeed * ticker.deltaTime;
-                    enemy.y += dy * enemySpeed * ticker.deltaTime;
-                    enemy.isThinking = false;
-                });
+                
+                if (false) {
+                    if (enemy.isThinking) continue;
+                    const enemyGameState = getGameStateFor(enemy);
+                    enemy.isThinking = true;
+                    getEnemyActionFromModel(enemyGameState).then((action) => {
+                        // console.log(action);
+                        let [dx, dy] = action;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance > 1) {
+                            dx /= distance;
+                            dy /= distance;
+                        }
+                        enemy.x += dx * enemySpeed * ticker.deltaTime;
+                        enemy.y += dy * enemySpeed * ticker.deltaTime;
+                        enemy.isThinking = false;
+                    });
+                    continue;
+                }
 
-                // // Move the enemy
-                // const dx = fighter.x - enemy.x;
-                // const dy = fighter.y - enemy.y;
-                // const distance = Math.sqrt(dx * dx + dy * dy);
-                // const angle = Math.atan2(dy, dx);
-                // const snappedAngle = Math.round(angle / (Math.PI / 8)) * (Math.PI / 8);
-                // enemy.rotation = snappedAngle + Math.PI / 2;
-                // if (distance > enemyRange) {
-                //     enemy.x += Math.cos(angle) * enemySpeed * ticker.deltaTime;
-                //     enemy.y += Math.sin(angle) * enemySpeed * ticker.deltaTime;
-                // } else if (distance < enemyRange * 3 / 4) {
-                //     enemy.x -= Math.cos(angle) * enemySpeed * ticker.deltaTime;
-                //     enemy.y -= Math.sin(angle) * enemySpeed * ticker.deltaTime;
-                // } else {
-                //     // Shoot
-                //     if (enemy.shootCooldown <= 0) {
-                //         enemy.shootCooldown = enemyRecoilAmount;
-                //         shoot(enemy.x, enemy.y, angle, false);
-                //     }
-                //     enemy.shootCooldown -= ticker.deltaTime;
-                // }
+                // Move the enemy
+                const dx = fighter.x - enemy.x;
+                const dy = fighter.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+                const snappedAngle = Math.round(angle / (Math.PI / 8)) * (Math.PI / 8);
+                enemy.rotation = snappedAngle + Math.PI / 2;
+                if (distance > enemyRange) {
+                    enemy.x += Math.cos(angle) * enemySpeed * ticker.deltaTime;
+                    enemy.y += Math.sin(angle) * enemySpeed * ticker.deltaTime;
+                } else if (distance < enemyRange * 3 / 4) {
+                    enemy.x -= Math.cos(angle) * enemySpeed * ticker.deltaTime;
+                    enemy.y -= Math.sin(angle) * enemySpeed * ticker.deltaTime;
+                } else {
+                    // Shoot
+                    if (enemy.shootCooldown <= 0) {
+                        enemy.shootCooldown = enemyRecoilAmount;
+                        shoot(enemy.x, enemy.y, angle, false);
+                    }
+                    enemy.shootCooldown -= ticker.deltaTime;
+                }
 
             }
         }
